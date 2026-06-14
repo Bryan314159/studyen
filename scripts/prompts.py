@@ -22,6 +22,17 @@ produce a JSON object with EXACTLY these fields and nothing else:
     2 = intermediate, requires some background
     3 = advanced / specialized
 
+Additional rules:
+- If the input is an abbreviation or acronym, the meaning_zh and meaning_en
+  fields must include the full form in parentheses on first mention
+  (e.g., "RAG (Retrieval-Augmented Generation)" / "RAG（检索增强生成）").
+  The example_en sentence should naturally use the abbreviation itself.
+- Popular AI product / model names (e.g., GPT-4, GPT-4o, Claude, Claude 3.5 Sonnet,
+  Llama, Llama 3, Mistral, Mixtral, Gemma, Qwen, DeepSeek, DeepSeek R1,
+  Stable Diffusion, Midjourney, DALL-E, Whisper, PaLM, Gemini, o1, Claude 3 Opus)
+  should use difficulty 2 by default — they are widely known and useful examples
+  are easy to write, but they are not foundational concepts.
+
 Output strictly valid JSON. No markdown, no commentary, no extra fields."""
 
 
