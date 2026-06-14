@@ -1,0 +1,535 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Studyen - AI 词汇学习</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['-apple-system', 'BlinkMacSystemFont', '"Segoe UI"', '"PingFang SC"', '"Microsoft YaHei"', 'sans-serif'],
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; }
+    .ipa { font-family: "Charis SIL", "Doulos SIL", "Lucida Sans Unicode", serif; font-style: normal; }
+    .ipa::before { content: "/"; margin-right: 1px; }
+    .ipa::after { content: "/"; margin-left: 1px; }
+    [data-status].active { ring: 2px; }
+    .scroll-mt-16 { scroll-margin-top: 5rem; }
+    /* Smooth scroll for category anchors */
+    html { scroll-behavior: smooth; }
+  </style>
+</head>
+<body class="dark bg-slate-950 text-slate-100 min-h-screen">
+
+  <!-- Header -->
+  <header class="sticky top-0 z-20 bg-slate-900/95 backdrop-blur border-b border-slate-800">
+    <div class="max-w-7xl mx-auto px-4 py-4 flex flex-wrap items-center justify-between gap-4">
+      <div class="flex-1 min-w-0">
+        <h1 class="text-2xl font-bold tracking-tight">Studyen</h1>
+        <p class="text-sm text-slate-400" id="vocab-meta">加载中...</p>
+      </div>
+      <div class="flex flex-wrap gap-2">
+        <button id="btn-add" class="px-3 py-2 rounded-md bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-medium transition">
+          + 手动添加
+        </button>
+        <button id="btn-export" class="px-3 py-2 rounded-md bg-slate-700 hover:bg-slate-600 text-white text-sm font-medium transition">
+          导出待补全
+        </button>
+        <button id="btn-settings" class="px-3 py-2 rounded-md bg-slate-700 hover:bg-slate-600 text-white text-sm font-medium transition">
+          设置
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main -->
+  <main class="max-w-7xl mx-auto px-4 py-6">
+
+    <!-- Loading -->
+    <div id="state-loading" class="text-center py-20">
+      <div class="inline-block w-8 h-8 border-2 border-slate-700 border-t-emerald-400 rounded-full animate-spin"></div>
+      <p class="mt-4 text-slate-400">正在加载词库...</p>
+    </div>
+
+    <!-- Error -->
+    <div id="state-error" class="hidden">
+      <div class="max-w-2xl mx-auto bg-red-950/50 border border-red-900 rounded-lg p-6 mt-10">
+        <h2 class="text-lg font-semibold text-red-300 mb-2">无法加载词库</h2>
+        <p class="text-sm text-red-200/80 mb-3" id="error-msg"></p>
+        <div class="text-xs text-slate-400 space-y-1">
+          <p>请尝试以下方式之一：</p>
+          <ol class="list-decimal list-inside space-y-1 pl-2">
+            <li>通过 HTTP 服务器访问：<code class="bg-slate-800 px-1 rounded">python3 -m http.server 8000</code>，然后访问 <code class="bg-slate-800 px-1 rounded">http://localhost:8000</code></li>
+            <li>确认 <code class="bg-slate-800 px-1 rounded">data/vocab.json</code> 存在</li>
+          </ol>
+        </div>
+      </div>
+    </div>
+
+    <!-- Empty -->
+    <div id="state-empty" class="hidden text-center py-20">
+      <p class="text-slate-400 text-lg">词库为空</p>
+      <p class="text-slate-500 text-sm mt-2">点击「手动添加」开始，或等待 GitHub Actions 自动填充词库</p>
+    </div>
+
+    <!-- Word list (rendered dynamically) -->
+    <div id="word-list" class="hidden space-y-10"></div>
+
+  </main>
+
+  <!-- Footer -->
+  <footer class="max-w-7xl mx-auto px-4 py-8 text-center text-xs text-slate-500">
+    <p>本地学习数据存储在浏览器 localStorage 中 · 关闭浏览器不会丢失</p>
+    <p class="mt-1"><a href="doc/REQUIREMENTS.md" class="hover:text-slate-400">需求文档</a> · <a href="CLAUDE.md" class="hover:text-slate-400">项目说明</a></p>
+  </footer>
+
+  <!-- Modal: 手动添加 -->
+  <div id="modal-add" class="hidden fixed inset-0 z-30 bg-black/60 flex items-center justify-center p-4">
+    <div class="bg-slate-900 border border-slate-700 rounded-lg shadow-xl max-w-md w-full p-6">
+      <h2 class="text-lg font-semibold mb-4">手动添加单词</h2>
+      <p class="text-sm text-slate-400 mb-4">输入英文单词或短语。单词会加入「待补全」列表，导出后提交到 GitHub，由 Actions 调用 LLM 生成完整释义。</p>
+      <input id="add-input" type="text" placeholder="例如：RAG, MCP, context window"
+             class="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-md text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500" />
+      <div class="flex justify-end gap-2 mt-4">
+        <button id="add-cancel" class="px-4 py-2 rounded-md bg-slate-700 hover:bg-slate-600 text-sm">取消</button>
+        <button id="add-confirm" class="px-4 py-2 rounded-md bg-emerald-600 hover:bg-emerald-500 text-white text-sm">添加</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: 设置 -->
+  <div id="modal-settings" class="hidden fixed inset-0 z-30 bg-black/60 flex items-center justify-center p-4">
+    <div class="bg-slate-900 border border-slate-700 rounded-lg shadow-xl max-w-md w-full p-6">
+      <h2 class="text-lg font-semibold mb-4">设置</h2>
+
+      <div class="space-y-4">
+        <div>
+          <label class="block text-sm font-medium text-slate-300 mb-2">口音</label>
+          <div class="flex gap-2">
+            <label class="flex-1 cursor-pointer">
+              <input type="radio" name="accent" value="us" class="peer hidden" />
+              <div class="px-3 py-2 text-center rounded-md border border-slate-700 peer-checked:bg-emerald-600 peer-checked:border-emerald-500 peer-checked:text-white text-sm">美式</div>
+            </label>
+            <label class="flex-1 cursor-pointer">
+              <input type="radio" name="accent" value="gb" class="peer hidden" />
+              <div class="px-3 py-2 text-center rounded-md border border-slate-700 peer-checked:bg-emerald-600 peer-checked:border-emerald-500 peer-checked:text-white text-sm">英式</div>
+            </label>
+          </div>
+        </div>
+
+        <div>
+          <label class="block text-sm font-medium text-slate-300 mb-2">
+            语速：<span id="rate-display">0.9</span>x
+          </label>
+          <input id="rate-slider" type="range" min="0.5" max="1.5" step="0.1" value="0.9"
+                 class="w-full accent-emerald-500" />
+          <div class="flex justify-between text-xs text-slate-500 mt-1">
+            <span>慢</span><span>正常</span><span>快</span>
+          </div>
+        </div>
+
+        <div class="pt-4 border-t border-slate-800">
+          <div class="flex items-center justify-between text-sm">
+            <span class="text-slate-400">待补全词条数</span>
+            <span id="pending-count" class="font-medium">0</span>
+          </div>
+          <button id="settings-clear-progress" class="mt-3 w-full px-3 py-2 text-sm rounded-md bg-red-950 hover:bg-red-900 text-red-300 border border-red-900">
+            清空所有掌握度记录
+          </button>
+        </div>
+      </div>
+
+      <div class="flex justify-end mt-6">
+        <button id="settings-close" class="px-4 py-2 rounded-md bg-slate-700 hover:bg-slate-600 text-sm">关闭</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast -->
+  <div id="toast" class="hidden fixed bottom-6 left-1/2 -translate-x-1/2 z-40 px-4 py-2 rounded-md bg-slate-800 border border-slate-700 text-sm shadow-lg"></div>
+
+  <script>
+  /* ============================================================
+     Studyen 前端逻辑
+     ============================================================ */
+
+  const STORAGE_KEY = 'studyen_state';
+  const VALID_CATEGORIES = ['core-concept', 'architecture', 'training', 'deployment', 'evaluation', 'tooling', 'agent'];
+  const CATEGORY_LABELS = {
+    'core-concept': '核心概念',
+    'architecture': '模型架构',
+    'training': '训练方法',
+    'deployment': '部署推理',
+    'evaluation': '评估指标',
+    'tooling': '工具框架',
+    'agent': 'Agent 相关',
+  };
+
+  /* ---------- 状态 ---------- */
+
+  function loadState() {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (raw) return JSON.parse(raw);
+    } catch (e) {
+      console.error('Failed to load state', e);
+    }
+    return {
+      progress: {},   // { [wordId]: { status: 'unknown'|'fuzzy'|'mastered', updated_at: string } }
+      pending: [],    // [{ word: string, added_at: string }]
+      settings: { accent: 'us', rate: 0.9 },
+    };
+  }
+
+  function saveState() {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    } catch (e) {
+      console.error('Failed to save state', e);
+      showToast('保存失败：localStorage 不可用');
+    }
+  }
+
+  let state = loadState();
+
+  /* ---------- 数据加载 ---------- */
+
+  async function loadVocab() {
+    try {
+      const resp = await fetch('data/vocab.json');
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      return await resp.json();
+    } catch (e) {
+      throw new Error(`加载 vocab.json 失败：${e.message}`);
+    }
+  }
+
+  /* ---------- 渲染 ---------- */
+
+  function render() {
+    if (!vocab || !vocab.entries || vocab.entries.length === 0) {
+      showState('empty');
+      return;
+    }
+
+    // 按 category 分组
+    const groups = {};
+    for (const e of vocab.entries) {
+      const cat = VALID_CATEGORIES.includes(e.category) ? e.category : 'core-concept';
+      if (!groups[cat]) groups[cat] = [];
+      groups[cat].push(e);
+    }
+    // 各类别内按 word 字母排序
+    for (const cat of Object.keys(groups)) {
+      groups[cat].sort((a, b) => a.word.localeCompare(b.word));
+    }
+
+    // 更新 meta
+    const meta = vocab.meta || {};
+    document.getElementById('vocab-meta').textContent =
+      `v${meta.version || '?'} · ${vocab.entries.length} 词`;
+
+    const list = document.getElementById('word-list');
+    list.innerHTML = '';
+
+    // 渲染每个 category
+    for (const cat of VALID_CATEGORIES) {
+      const entries = groups[cat];
+      if (!entries || entries.length === 0) continue;
+      const section = document.createElement('section');
+      section.id = `cat-${cat}`;
+      section.className = 'scroll-mt-16';
+      section.innerHTML = `
+        <h2 class="text-lg font-semibold text-slate-300 mb-4 pb-2 border-b border-slate-800">
+          ${CATEGORY_LABELS[cat] || cat}
+          <span class="text-sm text-slate-500 font-normal">(${entries.length})</span>
+        </h2>
+        <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+          ${entries.map(renderCard).join('')}
+        </div>
+      `;
+      list.appendChild(section);
+    }
+
+    showState('list');
+    attachCardListeners();
+  }
+
+  function renderCard(entry) {
+    const prog = state.progress[entry.id];
+    const status = prog ? prog.status : null;
+    const ipa = entry.ipa || '';
+    const ipaHtml = ipa
+      ? `<span class="ipa text-slate-400">${escapeHtml(ipa)}</span>`
+      : `<span class="ipa text-slate-600 italic">无音标</span>`;
+
+    const btnClass = (s) => `status-btn px-2.5 py-1 text-xs rounded-md border transition ${
+      status === s
+        ? s === 'mastered' ? 'bg-emerald-600 border-emerald-500 text-white'
+        : s === 'fuzzy' ? 'bg-amber-600 border-amber-500 text-white'
+        : 'bg-red-600 border-red-500 text-white'
+        : 'bg-slate-800 border-slate-700 text-slate-400 hover:bg-slate-700 hover:text-slate-200'
+    }`;
+
+    return `
+      <article class="bg-slate-900 border border-slate-800 rounded-lg p-5 hover:border-slate-700 transition" data-word-id="${escapeHtml(entry.id)}">
+        <header class="flex items-start justify-between gap-3 mb-3">
+          <div class="flex-1 min-w-0">
+            <h3 class="text-xl font-bold tracking-tight">${escapeHtml(entry.word)}</h3>
+            <p class="mt-1">${ipaHtml}</p>
+            <p class="text-xs text-slate-500 mt-0.5">${escapeHtml(entry.pos || '')}</p>
+          </div>
+          <button class="speak-btn flex-shrink-0 w-9 h-9 rounded-full bg-slate-800 hover:bg-emerald-600 text-slate-300 hover:text-white transition flex items-center justify-center" title="朗读">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/>
+              <path d="M15.54 8.46a5 5 0 0 1 0 7.07"/>
+              <path d="M19.07 4.93a10 10 0 0 1 0 14.14"/>
+            </svg>
+          </button>
+        </header>
+
+        <div class="space-y-2 mb-4">
+          <p class="text-sm text-slate-200 leading-relaxed">${escapeHtml(entry.meaning_zh || '')}</p>
+          ${entry.meaning_en ? `<p class="text-xs text-slate-400 italic leading-relaxed">${escapeHtml(entry.meaning_en)}</p>` : ''}
+        </div>
+
+        <div class="bg-slate-800/50 rounded-md p-3 mb-4 space-y-1">
+          <p class="text-sm text-slate-300 leading-relaxed">${escapeHtml(entry.example_en || '')}</p>
+          ${entry.example_zh ? `<p class="text-xs text-slate-400 leading-relaxed">${escapeHtml(entry.example_zh)}</p>` : ''}
+        </div>
+
+        <div class="flex gap-2">
+          <button class="${btnClass('unknown')}" data-status="unknown">不认识</button>
+          <button class="${btnClass('fuzzy')}" data-status="fuzzy">模糊</button>
+          <button class="${btnClass('mastered')}" data-status="mastered">掌握</button>
+        </div>
+      </article>
+    `;
+  }
+
+  function attachCardListeners() {
+    document.querySelectorAll('.speak-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        const card = e.currentTarget.closest('[data-word-id]');
+        const wordId = card.dataset.wordId;
+        const entry = vocab.entries.find(x => x.id === wordId);
+        if (entry) speak(entry.word);
+      });
+    });
+
+    document.querySelectorAll('.status-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        const card = e.currentTarget.closest('[data-word-id]');
+        const wordId = card.dataset.wordId;
+        const status = e.currentTarget.dataset.status;
+        setStatus(wordId, status);
+      });
+    });
+  }
+
+  /* ---------- 状态切换 ---------- */
+
+  function setStatus(wordId, status) {
+    // 如果当前状态就是它，再点一次则取消
+    const cur = state.progress[wordId];
+    if (cur && cur.status === status) {
+      delete state.progress[wordId];
+    } else {
+      state.progress[wordId] = {
+        status,
+        updated_at: new Date().toISOString(),
+      };
+    }
+    saveState();
+    render(); // 重新渲染以更新按钮样式
+  }
+
+  /* ---------- 朗读 ---------- */
+
+  let voicesLoaded = false;
+
+  function loadVoices() {
+    return new Promise(resolve => {
+      let voices = speechSynthesis.getVoices();
+      if (voices.length) {
+        voicesLoaded = true;
+        resolve(voices);
+        return;
+      }
+      speechSynthesis.onvoiceschanged = () => {
+        voices = speechSynthesis.getVoices();
+        voicesLoaded = true;
+        resolve(voices);
+      };
+      // 兜底超时
+      setTimeout(() => resolve(voices), 1000);
+    });
+  }
+
+  async function speak(text) {
+    if (!('speechSynthesis' in window)) {
+      showToast('当前浏览器不支持 Web Speech API');
+      return;
+    }
+    await loadVoices();
+    const u = new SpeechSynthesisUtterance(text);
+    u.lang = state.settings.accent === 'gb' ? 'en-GB' : 'en-US';
+    u.rate = state.settings.rate;
+    speechSynthesis.cancel();
+    speechSynthesis.speak(u);
+  }
+
+  /* ---------- 手动添加 ---------- */
+
+  function openAddModal() {
+    document.getElementById('add-input').value = '';
+    document.getElementById('modal-add').classList.remove('hidden');
+    setTimeout(() => document.getElementById('add-input').focus(), 50);
+  }
+  function closeAddModal() {
+    document.getElementById('modal-add').classList.add('hidden');
+  }
+  function confirmAdd() {
+    const word = document.getElementById('add-input').value.trim();
+    if (!word) {
+      showToast('请输入单词');
+      return;
+    }
+    if (state.pending.some(p => p.word.toLowerCase() === word.toLowerCase())) {
+      showToast('已在待补全列表中');
+      return;
+    }
+    state.pending.push({ word, added_at: new Date().toISOString() });
+    saveState();
+    updatePendingCount();
+    closeAddModal();
+    showToast(`已加入待补全：${word}`);
+  }
+
+  /* ---------- 导出待补全 ---------- */
+
+  function exportPending() {
+    if (state.pending.length === 0) {
+      showToast('待补全列表为空');
+      return;
+    }
+    const blob = new Blob(
+      [JSON.stringify({ pending: state.pending }, null, 2)],
+      { type: 'application/json' }
+    );
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'vocab.template.json';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    showToast(`已导出 ${state.pending.length} 个待补全词`);
+  }
+
+  /* ---------- 设置 ---------- */
+
+  function openSettings() {
+    // 同步 UI 与 state
+    document.querySelector(`input[name="accent"][value="${state.settings.accent}"]`).checked = true;
+    document.getElementById('rate-slider').value = state.settings.rate;
+    document.getElementById('rate-display').textContent = state.settings.rate.toFixed(1);
+    updatePendingCount();
+    document.getElementById('modal-settings').classList.remove('hidden');
+  }
+  function closeSettings() {
+    document.getElementById('modal-settings').classList.add('hidden');
+  }
+  function updatePendingCount() {
+    document.getElementById('pending-count').textContent = state.pending.length;
+  }
+
+  /* ---------- 工具 ---------- */
+
+  function escapeHtml(s) {
+    if (s == null) return '';
+    return String(s)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
+  function showState(s) {
+    for (const id of ['loading', 'error', 'empty', 'word-list']) {
+      document.getElementById(`state-${id}`).classList.add('hidden');
+    }
+    const map = { list: 'word-list', loading: 'state-loading', error: 'state-error', empty: 'state-empty' };
+    const target = map[s] || `state-${s}`;
+    document.getElementById(target).classList.remove('hidden');
+  }
+
+  let toastTimer = null;
+  function showToast(msg) {
+    const el = document.getElementById('toast');
+    el.textContent = msg;
+    el.classList.remove('hidden');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => el.classList.add('hidden'), 2500);
+  }
+
+  /* ---------- 启动 ---------- */
+
+  async function init() {
+    // 绑定事件
+    document.getElementById('btn-add').addEventListener('click', openAddModal);
+    document.getElementById('btn-export').addEventListener('click', exportPending);
+    document.getElementById('btn-settings').addEventListener('click', openSettings);
+    document.getElementById('add-cancel').addEventListener('click', closeAddModal);
+    document.getElementById('add-confirm').addEventListener('click', confirmAdd);
+    document.getElementById('add-input').addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') confirmAdd();
+      if (e.key === 'Escape') closeAddModal();
+    });
+    document.getElementById('settings-close').addEventListener('click', closeSettings);
+    document.querySelectorAll('input[name="accent"]').forEach(r => {
+      r.addEventListener('change', (e) => {
+        state.settings.accent = e.target.value;
+        saveState();
+      });
+    });
+    document.getElementById('rate-slider').addEventListener('input', (e) => {
+      state.settings.rate = parseFloat(e.target.value);
+      document.getElementById('rate-display').textContent = state.settings.rate.toFixed(1);
+      saveState();
+    });
+    document.getElementById('settings-clear-progress').addEventListener('click', () => {
+      if (confirm('确认清空所有掌握度记录？此操作不可撤销。')) {
+        state.progress = {};
+        saveState();
+        render();
+        showToast('已清空掌握度');
+      }
+    });
+
+    // 加载词库
+    try {
+      vocab = await loadVocab();
+      render();
+    } catch (e) {
+      console.error(e);
+      document.getElementById('error-msg').textContent = e.message;
+      showState('error');
+    }
+  }
+
+  init();
+  </script>
+</body>
+</html>
