@@ -467,8 +467,10 @@
   }
 
   function showState(s) {
-    for (const id of ['loading', 'error', 'empty', 'word-list']) {
-      document.getElementById(`state-${id}`).classList.add('hidden');
+    // 隐藏所有状态区块（注意：word-list 的 id 不带 state- 前缀）
+    const all = ['state-loading', 'state-error', 'state-empty', 'word-list'];
+    for (const id of all) {
+      document.getElementById(id).classList.add('hidden');
     }
     const map = { list: 'word-list', loading: 'state-loading', error: 'state-error', empty: 'state-empty' };
     const target = map[s] || `state-${s}`;
