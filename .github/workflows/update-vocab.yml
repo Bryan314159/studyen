@@ -1,0 +1,44 @@
+name: Update Vocab
+
+on:
+  # 每周一 UTC 03:00 自动跑
+  schedule:
+    - cron: '0 3 * * 1'
+  # 允许从 Actions 页面手动触发
+  workflow_dispatch:
+  # vocab.template.json 变更时触发（例如用户提交新词）
+  push:
+    paths:
+      - 'data/vocab.template.json'
+      - 'scripts/**'
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install -r scripts/requirements.txt
+
+      - name: Build vocab
+        env:
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+        run: python scripts/build_vocab.py
+
+      - name: Commit changes
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: 'chore(vocab): update [skip ci]'
+          file_pattern: 'data/*.json'
+          # 仅当有变更时才提交
+          skip_dirty_check: false
