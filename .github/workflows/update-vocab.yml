@@ -17,12 +17,16 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+    # 强制使用 Node.js 24：v4/v5/v6 的 checkout/setup-python/git-auto-commit-action
+    # 在 Node 20 上仍能跑，但 GitHub 已宣布 2026-09-16 删除 Node 20 runner。
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Setup Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: '3.11'
           cache: 'pip'
@@ -36,7 +40,7 @@ jobs:
         run: python scripts/build_vocab.py
 
       - name: Commit changes
-        uses: stefanzweifel/git-auto-commit-action@v5
+        uses: stefanzweifel/git-auto-commit-action@v7
         with:
           commit_message: 'chore(vocab): update [skip ci]'
           file_pattern: 'data/*.json'
