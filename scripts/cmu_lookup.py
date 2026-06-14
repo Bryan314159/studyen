@@ -117,10 +117,13 @@ def arpabet_to_ipa(phonemes: list[str]) -> str:
 
 
 def get_ipa(word: str) -> str | None:
-    """查询单词的 IPA 音标。
+    """查询单词或短语的 IPA 音标。
 
-    Args:
-        word: 英文单词或短语。多词短语仅取第一个词查 CMU dict。
+    策略：
+    1. 单个 token（如 "agent"）：直接查 CMU dict。
+    2. 多词短语 / 连字符复合词（如 "context window"、"fine-tuning"）：
+       把每一节单独查 CMU，命中则拼接；至少一节命中就返回。
+       这样 "context window" -> "/kˈɑntɛkst wˈɪndoʊ/"。
 
     Returns:
         形如 "/ˈeɪdʒənt/" 的字符串；查不到返回 None。
@@ -128,22 +131,40 @@ def get_ipa(word: str) -> str | None:
     if not word:
         return None
 
-    # 去除标点和多余空白
     cleaned = re.sub(r"[^A-Za-z\s'-]", " ", word).strip()
     if not cleaned:
         return None
 
-    # CMU dict 的 key 是小写
-    first_word = cleaned.split()[0].lower()
-    entries = _CMU.get(first_word)
-    if not entries:
+    # 把多词短语按空白拆分，再把每个 token 按连字符拆分
+    tokens: list[str] = []
+    for tok in cleaned.split():
+        for piece in tok.split("-"):
+            piece = re.sub(r"[^a-z]", "", piece.lower())
+            if piece:
+                tokens.append(piece)
+
+    if not tokens:
         return None
 
-    # 取第一个发音（通常为主要读音）
-    return "/" + arpabet_to_ipa(entries[0]) + "/"
+    pieces_ipa: list[str] = []
+    any_hit = False
+    for tok in tokens:
+        entries = _CMU.get(tok)
+        if entries:
+            pieces_ipa.append(arpabet_to_ipa(entries[0]))
+            any_hit = True
+        else:
+            pieces_ipa.append(tok)  # 未命中保留原文占位
+
+    if not any_hit:
+        return None
+
+    return "/" + " ".join(pieces_ipa) + "/"
 
 
 if __name__ == "__main__":
     # 简单自测
-    for w in ["agent", "token", "embedding", "RAG", "MCP", "context window", "transformer"]:
-        print(f"{w!r:20s} -> {get_ipa(w)}")
+    for w in ["agent", "token", "embedding", "RAG", "MCP",
+              "context window", "transformer", "fine-tuning", "zero-shot",
+              "nonexistentword12345"]:
+        print(f"{w!r:25s} -> {get_ipa(w)}")
